@@ -8,7 +8,8 @@ import os
 from dotenv import load_dotenv
 import news_collector
 import summarizer
-
+import fact_checker
+import bill_watcher
 
 load_dotenv()
 
@@ -77,8 +78,49 @@ def main():
         print(f"❌ Error in STEP 2: {e}")
         return
     
+    # Fact Checking
+    print("\n🔍 STEP 3: Fact checking articles...")
+    try:
+        df_fact_checked = fact_checker.fact_check_articles(df_summarized)
+        
+        print(f"✅ Fact checking complete!")
+        
+        # Show fact check results
+        print("\n📊 Fact Check Results:")
+        for i, row in df_fact_checked.iterrows():
+            status = row.get('fact_check_status', '❓ Unknown')
+            headline = row.get('headline', '')[:60]
+            print(f"  {status} {headline}...")
+                
+    except Exception as e:
+        print(f"❌ Error in STEP 3: {e}")
+        return
+    
+    # Government Bill Watcher
+    print("\n🏛️  STEP 4: Analyzing government bills and policy impact...")
+    try:
+        df_with_bills, bill_impacts = bill_watcher.analyze_bill_impact(df_fact_checked)
+        
+        print(f"✅ Bill analysis complete!")
+        
+        # Show bill impact results
+        if bill_impacts:
+            print("\n📋 Bill Impact Analysis:")
+            for impact in bill_impacts:
+                print(f"  📋 {impact['bill_name'] or impact['bill_number']}")
+                print(f"     Branch: {impact['branch_passed']}")
+                print(f"     Sectors: {', '.join(impact['sectors_affected'])}")
+                print(f"     Companies: {', '.join(impact['companies_affected'][:5])}...")
+                print()
+        else:
+            print("📝 No government bills found in current articles.")
+                
+    except Exception as e:
+        print(f"❌ Error in STEP 4: {e}")
+        return
+    
     print("\n🎉 Pipeline completed successfully!")
-    print("Ready for STEP 3 (Fact Checking) and beyond!")
+    print("Ready for STEP 5 (Email Composition) and beyond!")
 
 if __name__ == "__main__":
     main() 
