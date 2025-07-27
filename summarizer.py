@@ -47,60 +47,64 @@ def summarize_and_neutralize(text: str) -> Optional[str]:
 
 # --- BATCH SUMMARIZATION ---
 def summarize_articles_batch(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Summarize all articles in one batch request.
-    Sends all articles in a single prompt to Gemini.
-    """
+    """Summarize articles in batch to avoid rate limits"""
     if df.empty:
         return df
     
-    # Prepare all articles for processing
+    # Prepare batch prompt
     articles_text = ""
-    for idx, row in df.iterrows():
-        headline = row.get('headline', '')
-        content = row.get('content', '')
-        source = row.get('source', '')
+    for i, (_, article) in enumerate(df.iterrows(), 1):
+        headline = article.get('headline', '')
+        content = article.get('content', '')
         
-        article_text = f"Headline: {headline}\nContent: {content}\nSource: {source}\n\n"
-        articles_text += article_text
+        # Combine headline and content
+        full_text = f"{headline}\n{content}".strip()
+        articles_text += f"\n{i}. {full_text}\n"
     
-    # Create prompt
-    batch_prompt = (
-        "Summarize each of the following news articles in 2-3 sentences. "
-        "Remove political bias or emotionally charged language and keep it objective. "
-        "Format your response as a numbered list matching the order of articles:\n\n"
-        f"{articles_text}"
-    )
+    batch_prompt = SUMMARY_PROMPT.format(text=articles_text)
     
     try:
-        headers = {"Content-Type": "application/json"}
-        params = {"key": GEMINI_API_KEY}
-        data = {
-            "contents": [{"parts": [{"text": batch_prompt}]}]
-        }
-        
         print(f"🤖 Sending batch request for {len(df)} articles...")
-        response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=60)
-        response.raise_for_status()
-        result = response.json()
+        response = requests.post(
+            GEMINI_API_URL,
+            headers={'Content-Type': 'application/json'},
+            params={'key': GEMINI_API_KEY},
+            json={
+                'contents': [{
+                    'parts': [{'text': batch_prompt}]
+                }]
+            },
+            timeout=60
+        )
         
-        # Extract the batch response
-        batch_summary = result['candidates'][0]['content']['parts'][0]['text']
-        
-        # Parse the numbered list response
-        summaries = parse_batch_summaries(batch_summary, len(df))
-        
-        # Add summaries to DataFrame
-        df = df.copy()
-        df['summary'] = summaries
-        print(f"✅ Successfully summarized {len(df)} articles in one batch!")
-        
-        return df
-        
+        if response.status_code == 200:
+            data = response.json()
+            if 'candidates' in data and data['candidates']:
+                batch_summary = data['candidates'][0]['content']['parts'][0]['text']
+                summaries = parse_batch_summaries(batch_summary, len(df))
+                
+                # Add summaries to DataFrame
+                df_with_summaries = df.copy()
+                df_with_summaries['summary'] = None  # Initialize summary column
+                for i, summary in enumerate(summaries):
+                    if i < len(df_with_summaries) and summary:
+                        df_with_summaries.iloc[i, df_with_summaries.columns.get_loc('summary')] = summary
+                
+                print(f"✅ Successfully summarized {len(df)} articles in one batch!")
+                return df_with_summaries
+            else:
+                raise Exception("No response content from Gemini API")
+        else:
+            print(f"❌ Gemini API request failed with status {response.status_code}")
+            if response.status_code == 429:
+                print("⏰ Rate limit exceeded - falling back to individual summarization")
+            elif response.status_code == 400:
+                print("🔧 Bad request - check prompt format")
+            raise Exception(f"Gemini API error: {response.status_code}")
+            
     except Exception as e:
-        print(f"❌ Batch summarization error: {e}")
-        # Fallback to individual summaries for first few articles
-        return summarize_articles_individual(df.head(3))
+        print(f"❌ Batch summarization failed: {e}")
+        raise
 
 def parse_batch_summaries(batch_response: str, expected_count: int) -> List[str]:
     """
@@ -129,7 +133,7 @@ def summarize_articles_individual(df: pd.DataFrame) -> pd.DataFrame:
     """
     summaries = []
     for idx, row in df.iterrows():
-        text = row.get('content') or row.get('headline')
+        text = row.get('content') or row.get('headline', '')
         summary = summarize_and_neutralize(text)
         summaries.append(summary)
     df = df.copy()

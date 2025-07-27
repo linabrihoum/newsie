@@ -35,17 +35,9 @@ CATEGORIES = {
 
 # --- FETCH NEWS FROM NEWSAPI ---
 def fetch_newsapi_articles() -> List[Dict]:
-    """
-    Fetch news articles from NewsAPI published in the last 24 hours from trusted sources.
-    Returns a list of article dicts.
-    """
-    if not NEWSAPI_KEY:
-        raise ValueError("NEWSAPI_KEY environment variable not set.")
-
+    """Fetch articles from NewsAPI"""
     url = 'https://newsapi.org/v2/everything'
-    from_date = (datetime.utcnow() - timedelta(days=2)).strftime('%Y-%m-%dT%H:%M:%SZ')  # Extended to 2 days
-    
-    # Try with keywords first for better coverage
+    from_date = (datetime.utcnow() - timedelta(days=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
     params = {
         'q': 'reuters OR bloomberg OR "wall street journal" OR bbc OR npr OR "financial times" OR cnbc OR politico OR "associated press"',
         'from': from_date,
@@ -55,40 +47,29 @@ def fetch_newsapi_articles() -> List[Dict]:
         'apiKey': NEWSAPI_KEY
     }
     
-    print(f"🔍 Making request to NewsAPI with trusted source keywords...")
-    print(f"📅 Date range: {from_date} to now")
-    
     try:
         response = requests.get(url, params=params, timeout=30)
+        print(f"📅 Date range: {from_date} to now")
         print(f"📡 Response status: {response.status_code}")
         
-        if response.status_code != 200:
-            print(f"❌ API Error: {response.text}")
+        if response.status_code == 200:
+            data = response.json()
+            articles = data.get('articles', [])
+            print(f"✅ Found {len(articles)} articles (total: {data.get('totalResults', 0)})")
+            return articles
+        else:
+            print(f"❌ NewsAPI request failed with status {response.status_code}")
+            if response.status_code == 401:
+                print("🔑 Check your NewsAPI key - it may be invalid or expired")
+            elif response.status_code == 429:
+                print("⏰ Rate limit exceeded - try again later")
             return []
             
-        data = response.json()
-        articles = data.get('articles', [])
-        total_results = data.get('totalResults', 0)
-        
-        print(f"✅ Found {len(articles)} articles (total: {total_results})")
-        
-        if not articles:
-            print("⚠️  No articles found. Trying alternative approach...")
-            # Try without date filter as fallback
-            params.pop('from', None)
-            response = requests.get(url, params=params, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                articles = data.get('articles', [])
-                print(f"🔄 Found {len(articles)} articles without date filter")
-        
-        return articles
-        
     except requests.exceptions.RequestException as e:
-        print(f"❌ Network error: {e}")
+        print(f"❌ Network error fetching from NewsAPI: {e}")
         return []
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        print(f"❌ Unexpected error fetching from NewsAPI: {e}")
         return []
 
 # --- CATEGORIZATION ---

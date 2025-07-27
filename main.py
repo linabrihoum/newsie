@@ -10,117 +10,132 @@ import news_collector
 import summarizer
 import fact_checker
 import bill_watcher
+import email_composer
+import email_sender
 
 load_dotenv()
 
 def main():
-    """Main function to demonstrate the news collection and summarization pipeline"""
     print("📰 Daily News Digest Pipeline")
     print("=" * 50)
     
     # STEP 1: Collect News
-    print("\n🔍 STEP 1: Collecting news articles...")
+    print("\n📰 News Collection: Collecting articles from trustworthy sources...")
     try:
         df = news_collector.collect_all_news()
-        
         if df.empty:
-            print("❌ No articles found. Check your API key and network connection.")
+            print("❌ No articles collected. Check NewsAPI key and internet connection.")
             return
-            
-        print(f"✅ Successfully collected {len(df)} articles!")
-        
-        # Show category distribution
-        print("\n📊 Category Distribution:")
+        print(f"✅ News Collection complete! Found {len(df)} articles")
+        print(f"📊 Articles by category:")
         category_counts = df['category'].value_counts()
         for category, count in category_counts.items():
-            print(f"  {category}: {count} articles")
-            
-        # Show priority-sorted sample articles
-        print("\n📝 Priority-Sorted Sample Articles:")
-        categorized_articles = df[df['category'] != 'Miscellaneous']
-        if not categorized_articles.empty:
-            print("  🎯 Categorized Articles (High Priority):")
-            for i, row in categorized_articles.head(3).iterrows():
-                print(f"    {i+1}. [{row['category']}] {row['headline'][:70]}...")
-                print(f"       Source: {row['source']}")
-                print()
-        
-        # Show miscellaneous articles (lower priority)
-        misc_articles = df[df['category'] == 'Miscellaneous']
-        if not misc_articles.empty:
-            print("  📰 Miscellaneous Articles (Lower Priority):")
-            for i, row in misc_articles.head(2).iterrows():
-                print(f"    {i+1}. {row['headline'][:70]}...")
-                print(f"       Source: {row['source']}")
-                print()
-            
+            print(f"   {category}: {count}")
     except Exception as e:
-        print(f"❌ Error in STEP 1: {e}")
+        print(f"❌ News Collection failed: {e}")
         return
     
-    # Summarize Articles
-    print("\n🤖 STEP 2: Summarizing articles...")
+    # STEP 2: Summarize Articles
+    print("\n🤖 AI Summarization: Generating neutral summaries using Google Gemini...")
     try:
-        # Only summarize first 5 articles to avoid rate limits
-        df_sample = df.head(5).copy()
-        df_summarized = summarizer.summarize_articles(df_sample)
-        
-        print(f"✅ Successfully summarized {len(df_summarized)} articles!")
+        df_summarized = summarizer.summarize_articles(df)
+        if df_summarized.empty:
+            print("❌ No articles summarized. Check Gemini API key and rate limits.")
+            return
+        print(f"✅ AI Summarization complete! Summarized {len(df_summarized)} articles")
         
         # Show sample summaries
         print("\n📝 Sample Summaries:")
-        for i, row in df_summarized.iterrows():
-            if row.get('summary'):
-                print(f"  {i+1}. {row['summary'][:150]}...")
-                print()
-                
+        for i, (_, article) in enumerate(df_summarized.head().iterrows(), 1):
+            headline = article['headline'][:50] + "..." if len(article['headline']) > 50 else article['headline']
+            summary = article.get('summary', '')
+            if summary:
+                summary_display = summary[:100] + "..." if len(summary) > 100 else summary
+            else:
+                summary_display = "No summary available"
+            print(f"  {i}. {headline}")
+            print(f"     {summary_display}")
+            print()
     except Exception as e:
-        print(f"❌ Error in STEP 2: {e}")
+        print(f"❌ AI Summarization failed: {e}")
         return
     
-    # Fact Checking
-    print("\n🔍 STEP 3: Fact checking articles...")
+    # STEP 3: Fact Checking
+    print("\n🔍 Fact Checking: Verifying article consistency and flagging unverified claims...")
     try:
         df_fact_checked = fact_checker.fact_check_articles(df_summarized)
-        
-        print(f"✅ Fact checking complete!")
+        print(f"✅ Fact Checking complete!")
         
         # Show fact check results
-        print("\n📊 Fact Check Results:")
-        for i, row in df_fact_checked.iterrows():
-            status = row.get('fact_check_status', '❓ Unknown')
-            headline = row.get('headline', '')[:60]
-            print(f"  {status} {headline}...")
-                
+        verified_count = len(df_fact_checked[df_fact_checked['fact_check_status'] == '🔍 Fact-checked'])
+        unverified_count = len(df_fact_checked[df_fact_checked['fact_check_status'] == '⚠️ Unverified'])
+        print(f"📊 Fact Check Results:")
+        print(f"  🔍 Fact-checked: {verified_count}")
+        print(f"  ⚠️ Unverified: {unverified_count}")
+        
+        # Show sample fact-checked articles
+        print("\n📋 Sample Fact-Checked Articles:")
+        for _, article in df_fact_checked.head().iterrows():
+            headline = article.get('headline', 'Unknown headline')
+            headline_display = headline[:60] + "..." if len(headline) > 60 else headline
+            status = article.get('fact_check_status', '❓ Unknown')
+            print(f"  {status} {headline_display}")
     except Exception as e:
-        print(f"❌ Error in STEP 3: {e}")
+        print(f"❌ Fact Checking failed: {e}")
         return
     
-    # Government Bill Watcher
-    print("\n🏛️  STEP 4: Analyzing government bills and policy impact...")
+    # STEP 4: Government Bill Watcher
+    print("\n🏛️ Government Bill Analysis: Analyzing government bills and policy impact...")
     try:
         df_with_bills, bill_impacts = bill_watcher.analyze_bill_impact(df_fact_checked)
+        print(f"✅ Government Bill Analysis complete!")
         
-        print(f"✅ Bill analysis complete!")
-        
-        # Show bill impact results
         if bill_impacts:
-            print("\n📋 Bill Impact Analysis:")
-            for impact in bill_impacts:
-                print(f"  📋 {impact['bill_name'] or impact['bill_number']}")
-                print(f"     Branch: {impact['branch_passed']}")
-                print(f"     Sectors: {', '.join(impact['sectors_affected'])}")
-                print(f"     Companies: {', '.join(impact['companies_affected'][:5])}...")
-                print()
+            print(f"📋 Bill Analysis Results:")
+            print(f"  📜 Bills found: {len(bill_impacts)}")
+            for i, bill in enumerate(bill_impacts, 1):
+                print(f"    {i}. {bill.get('bill_name', 'Unknown Bill')}")
+                print(f"       Branch: {bill.get('branch_passed', 'Unknown')}")
+                print(f"       Sectors: {', '.join(bill.get('affected_sectors', []))}")
         else:
             print("📝 No government bills found in current articles.")
-                
     except Exception as e:
-        print(f"❌ Error in STEP 4: {e}")
+        print(f"❌ Government Bill Analysis failed: {e}")
         return
     
-    print("\n🎉 Pipeline completed successfully!")
-    print("Ready for STEP 5 (Email Composition) and beyond!")
+    # STEP 5: Email Composition
+    print("\n📧 Email Composition: Creating HTML email with categorized sections...")
+    try:
+        html_email = email_composer.create_html_email(df_with_bills, bill_impacts)
+        preview_filename = email_composer.save_email_preview(html_email)
+        print(f"✅ Email Composition complete!")
+        print(f"📄 Email preview saved to: {preview_filename}")
+        print(f"📊 Email contains {len(df_with_bills)} articles with summaries")
+        print(f"📋 Bill impacts: {len(bill_impacts)} bills analyzed")
+    except Exception as e:
+        print(f"❌ Email Composition failed: {e}")
+        return
+    
+    # STEP 6: Email Sending
+    print("\n📧 Email Delivery: Sending daily news digest...")
+    try:
+        recipient_email = os.getenv('EMAIL_RECIPIENTS')
+        if not recipient_email:
+            print("⚠️ EMAIL_RECIPIENTS not set in environment. Skipping email sending.")
+            print("💡 Set EMAIL_RECIPIENTS in your .env file to enable email sending.")
+        else:
+            success = email_sender.send_daily_digest(html_email, recipient_email)
+            if success:
+                print(f"✅ Email Delivery successful! Sent to {recipient_email}")
+            else:
+                print("❌ Email Delivery failed. Check Gmail API credentials.")
+    except Exception as e:
+        print(f"❌ Email Delivery failed: {e}")
+        return
+    
+    print("\n🎉 Daily News Digest Pipeline completed successfully!")
+    print("📰 Your automated news digest is ready for daily delivery!")
+    print("⏰ Next run scheduled for 9:00 AM Eastern Time tomorrow.")
 
 if __name__ == "__main__":
     main() 
