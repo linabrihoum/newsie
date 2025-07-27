@@ -12,9 +12,10 @@ GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5
 
 # --- PROMPT TEMPLATE ---
 SUMMARY_PROMPT = (
-    "Summarize this news article in 2–3 sentences. "
-    "Remove political bias or emotionally charged language and keep it objective.\n"
-    "Article: {text}"
+    "Summarize each of the following news articles in 2–3 sentences. "
+    "Remove political bias or emotionally charged language and keep it objective. "
+    "Format your response as a numbered list (1., 2., 3., etc.) with one summary per line.\n\n"
+    "Articles:\n{text}"
 )
 
 # --- SUMMARIZATION FUNCTION ---
@@ -115,11 +116,25 @@ def parse_batch_summaries(batch_response: str, expected_count: int) -> List[str]
     
     for line in lines:
         line = line.strip()
-        if line and (line[0].isdigit() or line.startswith('1.') or line.startswith('2.') or line.startswith('3.')):
+        # Look for numbered summaries (1., 2., 3., etc.)
+        if line and (line[0].isdigit() or line.startswith('1.') or line.startswith('2.') or line.startswith('3.') or line.startswith('4.') or line.startswith('5.')):
             # Extract summary text (remove numbering)
-            summary = line.split('.', 1)[-1].strip()
-            if summary:
+            if '. ' in line:
+                summary = line.split('. ', 1)[-1].strip()
+            elif line[0].isdigit() and len(line) > 2:
+                summary = line[2:].strip()
+            else:
+                summary = line
+            if summary and summary != 'None':
                 summaries.append(summary)
+    
+    # If we didn't find enough summaries, try a different approach
+    if len(summaries) < expected_count:
+        # Look for any text that might be a summary
+        remaining_lines = [line.strip() for line in lines if line.strip() and not line.strip()[0].isdigit()]
+        for line in remaining_lines:
+            if len(line) > 20 and not line.startswith('Summary') and not line.startswith('Article'):
+                summaries.append(line)
     
     # Ensure we have the right number of summaries
     while len(summaries) < expected_count:
@@ -149,13 +164,13 @@ def summarize_articles(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     
-    # Try batch summarization first
+    # Try batch summarization first (articles are already pre-selected by priority)
     try:
         return summarize_articles_batch(df)
     except Exception as e:
         print(f"⚠️  Batch summarization failed: {e}")
         print("🔄 Falling back to individual summarization...")
-        return summarize_articles_individual(df.head(5))  # Limit to 5 for rate limits
+        return summarize_articles_individual(df.head(10))  # Limit to 10 for rate limits
 
 if __name__ == "__main__":
     # Example usage: load articles and summarize

@@ -11,6 +11,7 @@ CATEGORY_EMOJIS = {
     'Economy': '📊',
     'Finance': '💵',
     'World': '🌍',
+    'Space': '🚀',
     'Miscellaneous': '📰'
 }
 
@@ -65,6 +66,10 @@ def format_article_html(article: pd.Series) -> str:
     category = article.get('category', '')
     url = article.get('url', '')
     fact_check_status = article.get('fact_check_status', '🔍 Fact-checked')
+    
+    # Handle None or empty summaries
+    if not summary or summary == 'None':
+        summary = "Summary not available"
     
     # Determine fact-check styling
     if 'Unverified' in fact_check_status:
@@ -121,8 +126,7 @@ def format_bill_section(bill_impacts: List[Dict]) -> str:
         if companies:
             html += f"""
             <div class="companies">
-                <strong>Companies to Watch:</strong> {", ".join(companies[:8])}
-                {f" (+{len(companies)-8} more)" if len(companies) > 8 else ""}
+                <strong>Companies to Watch:</strong> {", ".join(companies)}
             </div>
             """
         
@@ -197,10 +201,10 @@ def create_html_email(df: pd.DataFrame, bill_impacts: List[Dict] = None) -> str:
     # Add statistics section
     html += create_stats_section(df)
     
-    # Group articles by category (excluding Miscellaneous for now)
-    categories = ['Technology', 'Health', 'Government/Policy', 'Economy', 'Finance', 'World']
+    # Group articles by category (priority categories first)
+    priority_categories = ['Technology', 'Health', 'Government/Policy', 'Economy', 'Finance', 'World', 'Space']
     
-    for category in categories:
+    for category in priority_categories:
         category_articles = df[df['category'] == category]
         if not category_articles.empty:
             emoji = CATEGORY_EMOJIS.get(category, '📰')
@@ -211,7 +215,8 @@ def create_html_email(df: pd.DataFrame, bill_impacts: List[Dict] = None) -> str:
                 </div>
             """
             
-            for _, article in category_articles.iterrows():
+            # Show all articles in priority categories (up to 15 each)
+            for _, article in category_articles.head(15).iterrows():
                 html += format_article_html(article)
             
             html += "</div>"
@@ -220,7 +225,7 @@ def create_html_email(df: pd.DataFrame, bill_impacts: List[Dict] = None) -> str:
     if bill_impacts:
         html += format_bill_section(bill_impacts)
     
-    # Add Miscellaneous section at the end
+    # Add Miscellaneous section at the end (show more articles)
     misc_articles = df[df['category'] == 'Miscellaneous']
     if not misc_articles.empty:
         html += f"""
@@ -230,7 +235,8 @@ def create_html_email(df: pd.DataFrame, bill_impacts: List[Dict] = None) -> str:
             </div>
         """
         
-        for _, article in misc_articles.head(5).iterrows():  # Limit to 5 articles
+        # Show more miscellaneous articles (up to 20)
+        for _, article in misc_articles.head(20).iterrows():
             html += format_article_html(article)
         
         html += "</div>"
